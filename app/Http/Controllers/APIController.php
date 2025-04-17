@@ -339,6 +339,9 @@ public function getLabTests(Request $request)
 {
     try {
         $sid = $request->query('SID');
+        $serviceName = $request->query('ServiceName');
+        $sectionName = $request->query('SectionName');
+
         $query = DB::table('tblServicesProfile')
             ->join('tblEmployeeSetup', 'tblServicesProfile.EmployeeCode', '=', 'tblEmployeeSetup.EmployeeCode')
             ->join('tblServices', 'tblServicesProfile.ServiceID', '=', 'tblServices.ServiceId')
@@ -351,49 +354,102 @@ public function getLabTests(Request $request)
                 'tblSections.SectionName',
                 'tblServicesProfile.Description'
             );
-        if ($sid) { $query->where('tblServicesProfile.ServiceProfileID', $sid);}
+
+        if ($sid) {
+            $query->where('tblServicesProfile.ServiceProfileID', $sid);
+        }
+
+        if ($serviceName) {
+            $query->where('tblServices.ServiceName', 'like', '%' . $serviceName . '%');
+        }
+
+        if ($sectionName) {
+            $query->where('tblSections.SectionName', 'like', '%' . $sectionName . '%');
+        }
+
         $servicesData = $query->get();
-        if ($servicesData->isEmpty()) {return response()->json(['status' => 'error','message' => 'No lab test found for the given SID.',], 404); }
-        return response()->json([ 'status' => 'success','data' => $servicesData,], 200);
-    } catch (\Exception $e) {
-        return response()->json(['status' => 'error','message' => $e->getMessage(), ], 500); }
-}
 
-public function getPharmacyProducts()
-{
-   try{
-    $products = DB::table('tblChartOfItems as ci')
-    ->select(
-        'ci.ProductID as ProductId','ci.ProductName',
-        'ci.Salt','ci.Pieces','ci.PurchasePrice',
-        'ci.SalePrice','ci.Discount','ssi.Qty','ci.Remarks as Rack',
-        DB::raw("IFNULL(tblSubCategory.SubCategoryName, '') as SubCategory"),
-        'tblBrands.BrandName',
-        DB::raw("IFNULL(ci.Status, '') as Status"),
-        DB::raw("IFNULL(ci.`Lock`, '') as `Lock`"),
-        'ci.up'
-    )
-    ->join('tblSubStoreInventory as ssi', 'ci.ProductID', '=', 'ssi.PID')
-    ->leftJoin('tblBrands', 'tblBrands.BrandId', '=', 'ci.BrandID')
-    ->leftJoin('tblCategory', 'ci.CategoryID', '=', 'tblCategory.CategoryID')
-    ->leftJoin('tblSubCategory', 'ci.SubCategoryID', '=', 'tblSubCategory.SubCategoryID')
-    ->where('ssi.SectionID', 41)
-    ->where(DB::raw("IFNULL(ci.Status, '')"), '=', 'Ok')
-    ->where('ci.up', '=', '1')
-    ->get();
+        if ($servicesData->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No lab test found for the given criteria.',
+            ], 404);
+        }
 
-    return response()->json([ 'status' => 'success',
-       'data' => $products,
+        return response()->json([
+            'status' => 'success',
+            'data' => $servicesData,
         ], 200);
-}
-catch (\Exception $e) {
-    return response()->json([
-        'status' => 'error',
-        'message' => $e->getMessage(),
-    ], 500);
-}
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
 }
 
 
-    
+public function getPharmacyProducts(Request $request)
+{
+    try {
+        $productId = $request->query('ProductId');
+        $productName = $request->query('ProductName');
+        $salt = $request->query('Salt');
+
+        $query = DB::table('tblChartOfItems as ci')
+            ->select(
+                'ci.ProductID as ProductId',
+                'ci.ProductName',
+                'ci.Salt',
+                'ci.Pieces',
+                'ci.PurchasePrice',
+                'ci.SalePrice',
+                'ci.Discount',
+                'ssi.Qty',
+                'ci.Remarks as Rack',
+                DB::raw("IFNULL(tblSubCategory.SubCategoryName, '') as SubCategory"),
+                'tblBrands.BrandName',
+                DB::raw("IFNULL(ci.Status, '') as Status"),
+                DB::raw("IFNULL(ci.`Lock`, '') as `Lock`"),
+                'ci.up'
+            )
+            ->join('tblSubStoreInventory as ssi', 'ci.ProductID', '=', 'ssi.PID')
+            ->leftJoin('tblBrands', 'tblBrands.BrandId', '=', 'ci.BrandID')
+            ->leftJoin('tblCategory', 'ci.CategoryID', '=', 'tblCategory.CategoryID')
+            ->leftJoin('tblSubCategory', 'ci.SubCategoryID', '=', 'tblSubCategory.SubCategoryID')
+            ->where('ssi.SectionID', 41)
+            ->where(DB::raw("IFNULL(ci.Status, '')"), '=', 'Ok')
+            ->where('ci.up', '=', '1');
+
+        if ($productId) {
+            $query->where('ci.ProductID', '=', $productId);
+        }
+
+        if ($productName) {
+            $query->where('ci.ProductName', 'like', '%' . $productName . '%');
+        }
+
+        if ($salt) {
+            $query->where('ci.Salt', 'like', '%' . $salt . '%');
+        }
+
+        $products = $query->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $products,
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+
+
+
+
 }
