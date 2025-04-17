@@ -450,7 +450,43 @@ public function getPharmacyProducts(Request $request)
     }
 }
 
+public function createLabTestBooking(Request $request)
+{
+    $request->validate([
+        'sids' => 'required|array|min:1',
+        'sids.*' => 'integer|exists:tblServicesProfile,ServiceProfileID'
+    ]);
 
+    try {
+        $userId = Auth::id();
+
+        // Create main booking
+        $booking = LabTestBooking::create([
+            'UserID' => $userId,
+            'Status' => 'pending',
+        ]);
+
+        // Insert details
+        foreach ($request->sids as $sid) {
+            LabTestBookingDetail::create([
+                'BookingID' => $booking->BookingID,
+                'ServiceProfileID' => $sid,
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Booking created successfully.',
+            'BookingID' => $booking->BookingID
+        ], 201);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Something went wrong: ' . $e->getMessage()
+        ], 500);
+    }
+}
 
 
 

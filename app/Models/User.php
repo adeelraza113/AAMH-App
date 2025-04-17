@@ -49,4 +49,15 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+    
+    public function labTestBookings()
+    {
+        return $this->hasMany(LabTestBooking::class, 'UserID', 'id');
+    }
+    
+    public function orders()
+    {
+        return $this->hasMany(Order::class, 'UserID');
+    }
+    
 }

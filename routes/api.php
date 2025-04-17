@@ -28,6 +28,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/create-appointment', [APIController::class, 'createAppointment'])->name('create-appointment');
         Route::get('/lab-tests', [APIController::class, 'getLabTests'])->name('lab-tests');
         Route::get('/pharmacy-products', [APIController::class, 'getPharmacyProducts'])->name('pharmacy-products');
+        Route::post('/book-tests', [APIController::class, 'createLabTestBooking']);
 
     });
 });
