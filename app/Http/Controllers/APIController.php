@@ -20,6 +20,8 @@ use App\Models\MembershipCards;
 use App\Models\Departments;
 use App\Models\Doctors;
 use App\Models\Appointments;
+use App\Models\LabTestBooking;
+use App\Models\LabTestBookingDetail;
 
 class APIController extends Controller
 {
