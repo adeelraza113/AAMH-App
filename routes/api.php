@@ -29,6 +29,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/lab-tests', [APIController::class, 'getLabTests'])->name('lab-tests');
         Route::get('/pharmacy-products', [APIController::class, 'getPharmacyProducts'])->name('pharmacy-products');
         Route::post('/book-tests', [APIController::class, 'createLabTestBooking']);
+        Route::get('/bookings-history', [APIController::class, 'getLabTestBookings']);
+        Route::post('/order-medicine', [APIController::class, 'createOrder']);
+        Route::get('/order-history', [APIController::class, 'getOrders']);
 
     });
 });

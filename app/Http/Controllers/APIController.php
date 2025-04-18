@@ -22,6 +22,8 @@ use App\Models\Doctors;
 use App\Models\Appointments;
 use App\Models\LabTestBooking;
 use App\Models\LabTestBookingDetail;
+use App\Models\Order;
+use App\Models\OrderItem;
 
 class APIController extends Controller
 {
@@ -460,13 +462,19 @@ public function createLabTestBooking(Request $request)
     try {
         $userId = Auth::id();
 
-        // Create main booking
+        // Fetch NormalFees for each SID
+        $totalPrice = DB::table('tblServicesProfile')
+            ->whereIn('ServiceProfileID', $request->sids)
+            ->sum('NormalFees');
+
+        // Create main booking with TotalPrice
         $booking = LabTestBooking::create([
             'UserID' => $userId,
             'Status' => 'pending',
+            'TotalPrice' => $totalPrice,
         ]);
 
-        // Insert details
+        // Insert booking details
         foreach ($request->sids as $sid) {
             LabTestBookingDetail::create([
                 'BookingID' => $booking->BookingID,
@@ -477,8 +485,7 @@ public function createLabTestBooking(Request $request)
         return response()->json([
             'status' => 'success',
             'message' => 'Booking created successfully.',
-            'BookingID' => $booking->BookingID
-        ], 201);
+        ], 200);
 
     } catch (\Exception $e) {
         return response()->json([
@@ -487,6 +494,174 @@ public function createLabTestBooking(Request $request)
         ], 500);
     }
 }
+
+public function getLabTestBookings(Request $request)
+{
+    try {
+        $userId = Auth::id();
+
+        $bookings = DB::table('tblLabTestBookings')
+            ->join('users', 'tblLabTestBookings.UserID', '=', 'users.id')
+            ->where('tblLabTestBookings.UserID', $userId)
+            ->select(
+                'tblLabTestBookings.*',
+                'users.name as UserName',
+                'users.phone as UserPhone'
+            )
+            ->get();
+
+        if ($bookings->isEmpty()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'No lab test bookings found.',
+                'data' => [],
+            ], 200);
+        }
+
+        $result = [];
+
+        foreach ($bookings as $booking) {
+            $labTests = DB::table('tblLabTestBookingDetails')
+                ->join('tblServicesProfile', 'tblLabTestBookingDetails.ServiceProfileID', '=', 'tblServicesProfile.ServiceProfileID')
+                ->join('tblEmployeeSetup', 'tblServicesProfile.EmployeeCode', '=', 'tblEmployeeSetup.EmployeeCode')
+                ->join('tblServices', 'tblServicesProfile.ServiceID', '=', 'tblServices.ServiceId')
+                ->join('tblSections', 'tblServices.SectionId', '=', 'tblSections.SectionId')
+                ->where('tblLabTestBookingDetails.BookingID', $booking->BookingID)
+                ->select(
+                    'tblLabTestBookingDetails.ServiceProfileID as SID',
+                    'tblServices.ServiceName',
+                    'tblSections.SectionName',
+                    'tblEmployeeSetup.EmployeeName',
+                    'tblServicesProfile.NormalFees',
+                    'tblServicesProfile.Description'
+                )
+                ->get();
+
+            $totalPrice = $labTests->sum('NormalFees');
+
+            $result[] = [
+                'BookingID'   => $booking->BookingID,
+                'UserID'      => $booking->UserID,
+                'UserName'    => $booking->UserName,
+                'UserPhone'   => $booking->UserPhone,
+                'Status'      => $booking->Status,
+                'created_at'  => $booking->created_at,
+                'updated_at'  => $booking->updated_at,
+                'TotalPrice'  => $totalPrice,
+                'LabTests'    => $labTests,
+            ];
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $result,
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+
+public function createOrder(Request $request)
+{
+    try {
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.ProductID' => 'required|integer|exists:tblChartOfItems,ProductID',
+            'items.*.Qty' => 'required|integer|min:1',
+        ]);
+
+        $userId = auth()->user()->id;
+
+        DB::beginTransaction();
+
+        // Calculate total price
+        $totalPrice = 0;
+        foreach ($validated['items'] as $item) {
+            $product = DB::table('tblChartOfItems')->where('ProductID', $item['ProductID'])->first();
+            $discount = $product->Discount ?? 0;
+            $totalPrice += ($product->SalePrice - $discount) * $item['Qty'];
+        }
+
+        // Create Order
+        $order = Order::create([
+            'UserID' => $userId,
+            'TotalPrice' => $totalPrice,
+            'Status' => 'Pending',
+        ]);
+
+        // Create Order Items
+        foreach ($validated['items'] as $item) {
+            OrderItem::create([
+                'OrderID' => $order->OrderID,
+                'ProductID' => $item['ProductID'],
+                'Qty' => $item['Qty'],
+            ]);
+        }
+
+        DB::commit();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Order created successfully.',
+        ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+public function getOrders()
+{
+    try {
+        $orders = Order::with(['user', 'items'])->get();
+
+        $formattedOrders = $orders->map(function ($order) {
+            return [
+                'OrderID' => $order->OrderID,
+                'UserID' => $order->UserID,
+                'Name' => $order->user->name ?? '',
+                'Phone' => $order->user->phone ?? '',
+                'TotalPrice' => $order->TotalPrice,
+                'Status' => $order->Status,
+                'created_at' => $order->created_at,
+                'updated_at' => $order->updated_at,
+                'Items' => $order->items->map(function ($item) {
+                    $product = DB::table('tblChartOfItems')->where('ProductID', $item->ProductID)->first();
+
+                    return [
+                        'ProductId' => $product->ProductID ?? null,
+                        'ProductName' => $product->ProductName ?? '',
+                        'Salt' => $product->Salt ?? '',
+                        'SalePrice' => $product->SalePrice ?? 0,
+                        'Discount' => $product->Discount ?? 0,
+                        'Qty' => $item->Qty,
+                    ];
+                }),
+            ];
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $formattedOrders,
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
 
 
 
