@@ -7,7 +7,12 @@ use App\Http\Controllers\APIController;
 Route::post('/register', [APIController::class, 'register']);
 Route::post('/login', [APIController::class, 'login']);
 Route::get('/test', [APIController::class, 'test']);
+Route::post('/hospital-video', [APIController::class, 'store']);
 
+Route::middleware('auth:sanctum')->post('/labtestreport', [APIController::class, 'addLabTestReport']);
+Route::middleware('auth:sanctum')->get('/labtestreport', [APIController::class, 'getLabTestReportsByUser']);
+Route::post('/healthtips', [APIController::class, 'addHealthTip'])->middleware('auth:sanctum');
+Route::get('/healthtips', [APIController::class, 'getAllHealthTips'])->middleware('auth:sanctum');
 Route::get('/users', [APIController::class, 'users'])->middleware('auth:sanctum');
 Route::get('/departments', [APIController::class, 'allDepartments'])->name('departments');
 
@@ -32,6 +37,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/bookings-history', [APIController::class, 'getLabTestBookings']);
         Route::post('/order-medicine', [APIController::class, 'createOrder']);
         Route::get('/order-history', [APIController::class, 'getOrders']);
+        Route::get('/appointments', [APIController::class, 'getAppointments']);
+
 
     });
 });

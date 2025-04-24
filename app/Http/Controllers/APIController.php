@@ -10,6 +10,7 @@ use Laravel\Sanctum\HasApiTokens;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 
@@ -24,6 +25,9 @@ use App\Models\LabTestBooking;
 use App\Models\LabTestBookingDetail;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\HealthTip;
+use App\Models\LabTestReport;
+
 
 class APIController extends Controller
 {
@@ -317,15 +321,17 @@ class APIController extends Controller
 {
     $validator = Validator::make($request->all(), [
         'date' => 'required|date',
-        'time_slot' => 'required|date_format:h:i A',  
+        'time_slot' => 'required|date_format:h:iA',
         'doctor_name' => 'required|string',
     ]);
+
     if ($validator->fails()) {
         return response()->json([
             'status' => 'error',
             'message' => $validator->errors(),
         ], 400);
     }
+
     $user = Auth::user();
     if (!$user) {
         return response()->json([
@@ -333,11 +339,20 @@ class APIController extends Controller
             'message' => 'User not authenticated.',
         ], 401);
     }
+
+    $appointment = Appointments::create([
+        'user_id' => $user->id,
+        'date' => $request->date,
+        'time_slot' => $request->time_slot,
+        'doctor_name' => $request->doctor_name,
+    ]);
+
     return response()->json([
         'status' => 'success',
-        'message' => 'Appointment data received successfully!',
+        'message' => 'Appointment created successfully!',
     ], 200);
 }
+
 
 public function getLabTests(Request $request)
 {
@@ -503,6 +518,7 @@ public function getLabTestBookings(Request $request)
         $bookings = DB::table('tblLabTestBookings')
             ->join('users', 'tblLabTestBookings.UserID', '=', 'users.id')
             ->where('tblLabTestBookings.UserID', $userId)
+             ->orderBy('tblLabTestBookings.created_at', 'desc')
             ->select(
                 'tblLabTestBookings.*',
                 'users.name as UserName',
@@ -622,7 +638,12 @@ public function createOrder(Request $request)
 public function getOrders()
 {
     try {
-        $orders = Order::with(['user', 'items'])->get();
+        // Get the authenticated user
+        $user = auth()->user();
+        $orders = Order::with(['user', 'items'])
+            ->where('UserID', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
 
         $formattedOrders = $orders->map(function ($order) {
             return [
@@ -662,6 +683,178 @@ public function getOrders()
     }
 }
 
+
+public function getAppointments()
+{
+    try {
+        // Get the authenticated user
+        $user = auth()->user();
+
+
+        $appointments = Appointments::with(['user:id,name,phone'])
+            ->where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $data = $appointments->map(function ($appointment) {
+            return [
+                'id' => $appointment->id,
+                'user_id' => $appointment->user_id,
+                'user_name' => $appointment->user->name ?? null,
+                'user_phone' => $appointment->user->phone ?? null,
+                'date' => $appointment->date,
+                'time_slot' => $appointment->time_slot,
+                'doctor_name' => $appointment->doctor_name,
+                'created_at' => $appointment->created_at,
+                'updated_at' => $appointment->updated_at,
+            ];
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $data,
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+
+public function addHealthTip(Request $request)
+    {
+        try {
+            $request->validate([
+                'title' => 'required|string',
+                'description' => 'required|string',
+                'image' => 'required|string', 
+            ]);
+
+            $fileName = '';
+            if ($request->image) {
+                $decodedImage = base64_decode($request->image);
+                $fileName = time() . '.png';
+                Storage::disk('public')->put('uploads/' . $fileName, $decodedImage);
+            }
+
+            $healthTip = HealthTip::create([
+                'title' => $request->title,
+                'description' => $request->description,
+                'image' => $fileName,
+            ]);
+
+            return response()->json([
+                'status'=>'success',
+                'message' => 'Health tip added successfully',
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => 'Failed to add health tip',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+public function getAllHealthTips(Request $request)
+{
+    try {
+        // Accept any Bearer token
+        $authHeader = $request->header('Authorization');
+        if (!$authHeader || !str_starts_with($authHeader, 'Bearer ')) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+       $healthTips = HealthTip::orderBy('created_at', 'desc')->get();
+
+        // Add full image URL
+        foreach ($healthTips as $tip) {
+            $tip->image = Storage::disk('public')->url('uploads/' . $tip->image);
+        }
+
+        return response()->json([
+            'status'=>'success',
+            'message' => 'Health tips fetched successfully',
+            'data' => $healthTips
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => 'Failed to fetch health tips',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function addLabTestReport(Request $request)
+{
+    try {
+        $request->validate([
+            'testname' => 'required|string|max:255',
+            'report' => 'nullable|url',
+        ]);
+
+        $report = LabTestReport::create([
+            'user_id' => Auth::id(), // Take from Bearer Token
+            'testname' => $request->testname,
+            'report' => $request->report
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Lab test report added successfully',
+        ], 200);
+
+    } catch (\Exception $e) {
+        Log::error('Error adding lab test report: ' . $e->getMessage());
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Failed to add lab test report',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function getLabTestReportsByUser()
+{
+    try {
+        $userId = Auth::id();
+
+        $reports = LabTestReport::with('user:id,name') 
+            ->where('user_id', $userId)
+            ->orderBy('lab_test_reports.created_at', 'desc')
+            ->get()
+            ->map(function ($report) {
+                return [
+                    'id' => $report->id,
+                    'user_id' => $report->user_id,
+                    'patient_name' => $report->user->name ?? null,
+                    'testname' => $report->testname,
+                    'report' => $report->report,
+                    'created_at' => $report->created_at,
+                    'updated_at' => $report->updated_at,
+                ];
+            });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Lab test reports fetched successfully',
+            'data' => $reports
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Failed to fetch lab test reports',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
 
 
 
