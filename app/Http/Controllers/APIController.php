@@ -218,17 +218,36 @@ class APIController extends Controller
             'departments' => $departments,
         ]);
     }
-    public function getDoctorsByDepartment(Request $request, $id){
-        $doctors = Doctors::with('department')->where('department_id', $id)->get();
-        foreach($doctors as $doctor){
-            $doctor->timetable = json_decode($doctor->timetable);
-            $doctor->image = Storage::disk('public')->url('uploads/doctors/'.$doctor->image);
-        }
-        return response()->json([
-            'status' => 'success',
-            'doctors' => $doctors,
-        ]);
+    
+   public function getDoctorsByDepartment(Request $request, $id){
+    // Get the name from the query parameter
+    $name = $request->query('name');
+
+    // Build the query
+    $query = Doctors::with('department')->where('department_id', $id);
+
+    // If name is provided, apply the search filter
+    if ($name) {
+        $query->where('name', 'like', '%' . $name . '%');
     }
+
+    // Get the results
+    $doctors = $query->get();
+
+    // Decode timetable and set image URL
+    foreach($doctors as $doctor){
+        $doctor->timetable = json_decode($doctor->timetable);
+        $doctor->image = Storage::disk('public')->url('uploads/doctors/'.$doctor->image);
+    }
+
+    // Return the response
+    return response()->json([
+        'status' => 'success',
+        'doctors' => $doctors,
+    ]);
+}
+
+
     public function getDoctorsByTags(Request $request){
         $search = $request->query('search');
         $doctors = array();
@@ -246,77 +265,68 @@ class APIController extends Controller
     }
 
     public function getOneDayDoctorAppointment(Request $request, $doctor_id) {
-        // Fetch doctor details
-        $doctor = Doctors::where('id', $doctor_id)->first();
-    
-        // Check if doctor exists
-        if (!$doctor) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Doctor not found',
-            ], 404);
-        }
-    
-        // Check if timetable exists
-        if (empty($doctor->timetable)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Timetable not found for this doctor',
-            ], 404);
-        }
-    
-        // Decode the timetable
-        $time_table = json_decode($doctor->timetable, true);
-        $date = $request->query('date');
-        $day_of_week = date('w', strtotime($date));
-    
-        // Days array to map numeric day to string
-        $days = [
-            1 => "Monday",
-            2 => "Tuesday",
-            3 => "Wednesday",
-            4 => "Thursday",
-            5 => "Friday",
-            6 => "Saturday",
-            0 => "Sunday"
-        ];
-    
-        // Check if timetable has an entry for the selected day
-        if (!isset($time_table[$days[$day_of_week]])) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'No timetable entry found for this day',
-            ], 404);
-        }
-    
-        $selected_date_time_table = $time_table[$days[$day_of_week]];
-    
-        // Handle if doctor is off on the selected day
-        if ($selected_date_time_table == "off") {
-            return response()->json([
-                'status' => 'success',
-                'appointments' => [],
-            ]);
-        } else {
-            // Parse the available time slots
-            $selected_date_time_table = explode(' to ', $selected_date_time_table);
-            $start_time = Carbon::parse($selected_date_time_table[0]);
-            $end_time = Carbon::parse($selected_date_time_table[1]);
-    
-            $appointments = [];
-            while ($start_time->lessThan($end_time)) {
-                $appointments[] = $start_time->format('g:iA');
-                // Increment by 20 minutes
-                $start_time->addMinutes(20);
-            }
-    
-            return response()->json([
-                'status' => 'success',
-                'appointments' => $appointments,
-            ]);
-        }
+    // Fetch doctor details
+    $doctor = Doctors::where('id', $doctor_id)->first();
+
+    // Check if doctor exists
+    if (!$doctor) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Doctor not found',
+        ], 404);
     }
 
+    // Get date from query
+    $date = $request->query('date');
+
+    // Validate date
+    if (!$date || !strtotime($date)) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Invalid date',
+        ], 400);
+    }
+
+    // Get day of the week
+    $day_of_week = date('l', strtotime($date)); // Full name like Monday
+
+    // Dynamically build the field names
+    $isAvailableField = 'IsAvailableOn' . $day_of_week;
+    $fromField = $day_of_week . 'From';
+    $toField = $day_of_week . 'To';
+
+    // Check if the doctor is available that day
+    if (!$doctor->$isAvailableField || !$doctor->$fromField || !$doctor->$toField) {
+        return response()->json([
+            'status' => 'success',
+            'appointments' => [],
+        ]);
+    }
+
+    try {
+        // Parse the start and end times
+        $start_time = Carbon::parse($doctor->$fromField);
+        $end_time = Carbon::parse($doctor->$toField);
+
+        $appointments = [];
+        while ($start_time->lessThan($end_time)) {
+            $appointments[] = $start_time->format('g:iA');
+            $start_time->addMinutes(20);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'appointments' => $appointments,
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Error parsing time: ' . $e->getMessage(),
+        ], 500);
+    }
+}
+
+    
     public function createAppointment(Request $request)
 {
     $validator = Validator::make($request->all(), [
@@ -514,17 +524,25 @@ public function getLabTestBookings(Request $request)
 {
     try {
         $userId = Auth::id();
+        $searchName = $request->query('UserName'); 
 
-        $bookings = DB::table('tblLabTestBookings')
+        // Start building the query
+        $query = DB::table('tblLabTestBookings')
             ->join('users', 'tblLabTestBookings.UserID', '=', 'users.id')
             ->where('tblLabTestBookings.UserID', $userId)
-             ->orderBy('tblLabTestBookings.created_at', 'desc')
+            ->orderBy('tblLabTestBookings.created_at', 'desc')
             ->select(
                 'tblLabTestBookings.*',
                 'users.name as UserName',
                 'users.phone as UserPhone'
-            )
-            ->get();
+            );
+
+        // Apply search filter if user_name is provided
+        if ($searchName) {
+            $query->where('users.name', 'like', '%' . $searchName . '%');
+        }
+
+        $bookings = $query->get();
 
         if ($bookings->isEmpty()) {
             return response()->json([
@@ -582,6 +600,7 @@ public function getLabTestBookings(Request $request)
 }
 
 
+
 public function createOrder(Request $request)
 {
     try {
@@ -635,13 +654,19 @@ public function createOrder(Request $request)
     }
 }
 
-public function getOrders()
+public function getOrders(Request $request)
 {
     try {
-        // Get the authenticated user
         $user = auth()->user();
+        $search = $request->query('UserName');
+
         $orders = Order::with(['user', 'items'])
             ->where('UserID', $user->id)
+            ->when($search, function ($query) use ($search) {
+                $query->whereHas('user', function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%');
+                });
+            })
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -684,15 +709,23 @@ public function getOrders()
 }
 
 
-public function getAppointments()
+
+public function getAppointments(Request $request)
 {
     try {
-        // Get the authenticated user
         $user = auth()->user();
-
+        $search = $request->query('search');
 
         $appointments = Appointments::with(['user:id,name,phone'])
             ->where('user_id', $user->id)
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('doctor_name', 'like', '%' . $search . '%')
+                      ->orWhereHas('user', function ($uq) use ($search) {
+                          $uq->where('name', 'like', '%' . $search . '%');
+                      });
+                });
+            })
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -714,6 +747,7 @@ public function getAppointments()
             'status' => 'success',
             'data' => $data,
         ], 200);
+
     } catch (\Exception $e) {
         return response()->json([
             'status' => 'error',
@@ -721,6 +755,7 @@ public function getAppointments()
         ], 500);
     }
 }
+
 
 
 public function addHealthTip(Request $request)
@@ -820,26 +855,35 @@ public function addLabTestReport(Request $request)
     }
 }
 
-public function getLabTestReportsByUser()
+public function getLabTestReportsByUser(Request $request)
 {
     try {
         $userId = Auth::id();
+        $search = $request->query('search');
 
-        $reports = LabTestReport::with('user:id,name') 
+        $reportsQuery = LabTestReport::with('user:id,name')
             ->where('user_id', $userId)
-            ->orderBy('lab_test_reports.created_at', 'desc')
-            ->get()
-            ->map(function ($report) {
-                return [
-                    'id' => $report->id,
-                    'user_id' => $report->user_id,
-                    'patient_name' => $report->user->name ?? null,
-                    'testname' => $report->testname,
-                    'report' => $report->report,
-                    'created_at' => $report->created_at,
-                    'updated_at' => $report->updated_at,
-                ];
-            });
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('testname', 'like', '%' . $search . '%')
+                      ->orWhereHas('user', function ($userQuery) use ($search) {
+                          $userQuery->where('name', 'like', '%' . $search . '%');
+                      });
+                });
+            })
+            ->orderBy('lab_test_reports.created_at', 'desc');
+
+        $reports = $reportsQuery->get()->map(function ($report) {
+            return [
+                'id' => $report->id,
+                'user_id' => $report->user_id,
+                'patient_name' => $report->user->name ?? null,
+                'testname' => $report->testname,
+                'report' => $report->report,
+                'created_at' => $report->created_at,
+                'updated_at' => $report->updated_at,
+            ];
+        });
 
         return response()->json([
             'status' => 'success',
@@ -855,6 +899,7 @@ public function getLabTestReportsByUser()
         ], 500);
     }
 }
+
 
 
 
