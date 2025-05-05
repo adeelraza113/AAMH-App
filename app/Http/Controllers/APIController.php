@@ -27,6 +27,8 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\HealthTip;
 use App\Models\LabTestReport;
+use App\Models\UserPayment;
+use App\Models\Slider;
 
 
 class APIController extends Controller
@@ -240,7 +242,6 @@ class APIController extends Controller
         $doctor->image = Storage::disk('public')->url('uploads/doctors/'.$doctor->image);
     }
 
-    // Return the response
     return response()->json([
         'status' => 'success',
         'doctors' => $doctors,
@@ -268,7 +269,6 @@ class APIController extends Controller
     // Fetch doctor details
     $doctor = Doctors::where('id', $doctor_id)->first();
 
-    // Check if doctor exists
     if (!$doctor) {
         return response()->json([
             'status' => 'error',
@@ -276,10 +276,8 @@ class APIController extends Controller
         ], 404);
     }
 
-    // Get date from query
     $date = $request->query('date');
 
-    // Validate date
     if (!$date || !strtotime($date)) {
         return response()->json([
             'status' => 'error',
@@ -481,7 +479,8 @@ public function createLabTestBooking(Request $request)
 {
     $request->validate([
         'sids' => 'required|array|min:1',
-        'sids.*' => 'integer|exists:tblServicesProfile,ServiceProfileID'
+        'sids.*' => 'integer|exists:tblServicesProfile,ServiceProfileID',
+        'address' => 'required|string|max:500', // <- new validation
     ]);
 
     try {
@@ -492,14 +491,14 @@ public function createLabTestBooking(Request $request)
             ->whereIn('ServiceProfileID', $request->sids)
             ->sum('NormalFees');
 
-        // Create main booking with TotalPrice
+        // Create main booking with TotalPrice and Address
         $booking = LabTestBooking::create([
             'UserID' => $userId,
             'Status' => 'pending',
             'TotalPrice' => $totalPrice,
+            'Address' => $request->address, // <- save address
         ]);
 
-        // Insert booking details
         foreach ($request->sids as $sid) {
             LabTestBookingDetail::create([
                 'BookingID' => $booking->BookingID,
@@ -519,6 +518,7 @@ public function createLabTestBooking(Request $request)
         ], 500);
     }
 }
+
 
 public function getLabTestBookings(Request $request)
 {
@@ -579,6 +579,7 @@ public function getLabTestBookings(Request $request)
                 'UserName'    => $booking->UserName,
                 'UserPhone'   => $booking->UserPhone,
                 'Status'      => $booking->Status,
+                'Address'      => $booking->Address,
                 'created_at'  => $booking->created_at,
                 'updated_at'  => $booking->updated_at,
                 'TotalPrice'  => $totalPrice,
@@ -608,6 +609,7 @@ public function createOrder(Request $request)
             'items' => 'required|array|min:1',
             'items.*.ProductID' => 'required|integer|exists:tblChartOfItems,ProductID',
             'items.*.Qty' => 'required|integer|min:1',
+            'address' => 'required|string|max:500', // <- new validation rule for address
         ]);
 
         $userId = auth()->user()->id;
@@ -622,11 +624,12 @@ public function createOrder(Request $request)
             $totalPrice += ($product->SalePrice - $discount) * $item['Qty'];
         }
 
-        // Create Order
+        // Create Order with Address
         $order = Order::create([
             'UserID' => $userId,
             'TotalPrice' => $totalPrice,
             'Status' => 'Pending',
+            'Address' => $validated['address'], // <- saving the address from request body
         ]);
 
         // Create Order Items
@@ -654,6 +657,7 @@ public function createOrder(Request $request)
     }
 }
 
+
 public function getOrders(Request $request)
 {
     try {
@@ -678,6 +682,7 @@ public function getOrders(Request $request)
                 'Phone' => $order->user->phone ?? '',
                 'TotalPrice' => $order->TotalPrice,
                 'Status' => $order->Status,
+                'Address' => $order->Address,
                 'created_at' => $order->created_at,
                 'updated_at' => $order->updated_at,
                 'Items' => $order->items->map(function ($item) {
@@ -738,6 +743,7 @@ public function getAppointments(Request $request)
                 'date' => $appointment->date,
                 'time_slot' => $appointment->time_slot,
                 'doctor_name' => $appointment->doctor_name,
+                'status' => $appointment->status,
                 'created_at' => $appointment->created_at,
                 'updated_at' => $appointment->updated_at,
             ];
@@ -895,6 +901,245 @@ public function getLabTestReportsByUser(Request $request)
         return response()->json([
             'status' => false,
             'message' => 'Failed to fetch lab test reports',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function getAddresses()
+    {
+        try {
+            $addresses = DB::table('addresses')->get();
+
+            return response()->json([
+                'status' => true,
+                'data' => $addresses
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch addresses',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+public function deleteLabTestBooking(Request $request)
+{
+    try {
+        $bookingID = $request->query('BookingID');
+
+        if (!$bookingID) {
+            return response()->json(['status' => false, 'message' => 'BookingID is required'], 400);
+        }
+
+        $booking = LabTestBooking::find($bookingID);
+
+        if (!$booking) {
+            return response()->json(['status' => false, 'message' => 'Booking not found'], 404);
+        }
+
+        $booking->delete(); 
+
+        return response()->json(['status' => 'success', 'message' => 'Booking deleted successfully'], 200);
+
+    } catch (\Exception $e) {
+        return response()->json(['status' => false, 'message' => 'Error deleting booking', 'error' => $e->getMessage()], 500);
+    }
+}
+
+public function deleteOrder(Request $request)
+{
+    try {
+        $orderID = $request->query('OrderID');
+
+        if (!$orderID) {
+            return response()->json(['status' => false, 'message' => 'OrderID is required'], 400);
+        }
+
+        $order = Order::find($orderID);
+
+        if (!$order) {
+            return response()->json(['status' => false, 'message' => 'Order not found'], 404);
+        }
+
+        $order->delete(); 
+
+        return response()->json(['status' => 'success', 'message' => 'Order deleted successfully'], 200);
+
+    } catch (\Exception $e) {
+        return response()->json(['status' => false, 'message' => 'Error deleting order', 'error' => $e->getMessage()], 500);
+    }
+}
+
+public function deleteAppointment(Request $request)
+{
+    $appointmentId = $request->query('id');
+
+    if (!$appointmentId) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Appointment ID is required.',
+        ], 400);
+    }
+
+    $user = Auth::user();
+    if (!$user) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'User not authenticated.',
+        ], 401);
+    }
+
+    $appointment = Appointments::where('id', $appointmentId)
+        ->where('user_id', $user->id) 
+        ->first();
+
+    if (!$appointment) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Appointment not found or access denied.',
+        ], 404);
+    }
+
+    $appointment->delete();
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Appointment deleted successfully.',
+    ], 200);
+}
+
+public function makePayment(Request $request)
+{
+    try {
+        $request->validate([
+            'payment_type' => 'required|string|max:100',
+            'payment_image' => 'nullable|string', 
+        ]);
+
+        $fileName = '';
+        if (isset($request->payment_image) && $request->payment_image) {
+            $file = base64_decode($request->payment_image);
+            $fileName = time() . '.png';
+            Storage::disk('public')->put('uploads/' . $fileName, $file);
+        }
+
+        $userId = Auth::id();
+
+        DB::table('user_payments')->insert([
+            'user_id' => $userId,
+            'payment_type' => $request->payment_type,
+            'payment_image' => $fileName,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Payment saved successfully',
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Failed to save payment: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+public function approveAppointment(Request $request)
+{
+    $appointmentId = $request->query('id');
+
+    if (!$appointmentId) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Appointment ID is required in the query parameter.',
+        ], 400);
+    }
+
+    $appointment = Appointments::find($appointmentId);
+
+    if (!$appointment) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Appointment not found.',
+        ], 404);
+    }
+
+    if ($appointment->status === 'Completed') {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Appointment is already completed.',
+        ], 400);
+    }
+
+    $appointment->status = 'Completed';
+    $appointment->save();
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Appointment approved and marked as Completed.',
+    ], 200);
+}
+
+public function createSlider(Request $request)
+{
+    try {
+        $request->validate([
+            'image_name' => 'required|string|max:255',
+            'image' => 'required|string', // base64 string
+            'IsBit' => 'nullable|in:0,1',
+        ]);
+
+        $fileName = '';
+        if (isset($request->image) && $request->image) {
+            $file = base64_decode($request->image);
+            $fileName = time() . '.png';
+            Storage::disk('public')->put('uploads/' . $fileName, $file);
+        }
+
+        $slider = Slider::create([
+            'image_name' => $request->image_name,
+            'image' => $fileName,
+            'IsBit' => $request->IsBit ?? 1, 
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Slider created successfully',
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Failed to create slider',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function getActiveSliders()
+{
+    try {
+        $sliders = Slider::where('IsBit', 1)
+                         ->orderBy('id', 'desc') 
+                         ->get();
+
+        foreach ($sliders as $slider) {
+            $slider->image = Storage::disk('public')->url('uploads/' . $slider->image);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Active sliders fetched successfully',
+            'data' => $sliders
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => false,
+            'message' => 'Failed to fetch active sliders',
             'error' => $e->getMessage()
         ], 500);
     }

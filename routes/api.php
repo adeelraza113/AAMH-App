@@ -16,6 +16,19 @@ Route::get('/healthtips', [APIController::class, 'getAllHealthTips'])->middlewar
 Route::get('/users', [APIController::class, 'users'])->middleware('auth:sanctum');
 Route::get('/departments', [APIController::class, 'allDepartments'])->name('departments');
 
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/addresses', [APIController::class, 'getAddresses']);
+    Route::delete('/labtestbooking', [APIController::class, 'deleteLabTestBooking']);
+    Route::delete('/pharmacyorder', [APIController::class, 'deleteOrder']);
+    Route::delete('/appointment', [APIController::class, 'deleteAppointment']);
+    Route::post('/payment', [APIController::class, 'makePayment']);
+    Route::post('/approveAppointment', [APIController::class, 'approveAppointment']);
+    Route::post('/app-slider', [APIController::class, 'createSlider']);
+    Route::get('/app-sliders', [APIController::class, 'getActiveSliders']);
+
+
+});
+
 Route::group(['as' => "feedback-", 'prefix' => 'feedback'], function () {
     Route::get('/all', [APIController::class, 'allFeedback'])->name('all');
     Route::get('/rating', [APIController::class, 'getFeedbackRatings'])->name('rating');
