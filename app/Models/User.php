@@ -24,6 +24,7 @@ class User extends Authenticatable
         'phone',
         'address',
         'profile_image',
+        'mr_number',
         'password'
     ];
 
@@ -59,5 +60,10 @@ class User extends Authenticatable
     {
         return $this->hasMany(Order::class, 'UserID');
     }
+    
+    public function appointments()
+{
+    return $this->hasMany(App\Models\Appointments::class);
+}
     
 }

@@ -25,6 +25,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/approveAppointment', [APIController::class, 'approveAppointment']);
     Route::post('/app-slider', [APIController::class, 'createSlider']);
     Route::get('/app-sliders', [APIController::class, 'getActiveSliders']);
+    Route::get('/user-profile', [APIController::class, 'getProfile']);
+    Route::put('/user-profile', [APIController::class, 'updateProfile']);
 
 
 });

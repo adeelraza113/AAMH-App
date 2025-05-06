@@ -33,78 +33,88 @@ use App\Models\Slider;
 
 class APIController extends Controller
 {
-    public function login(Request $request){
-        if (!Auth::attempt($request->only('email', 'password'))) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid login details'
-            ], 401);
-        }
-
-        try {
-            $user = User::where('email', $request['email'])->firstOrFail();
-            // Code that may throw an exception
-            $token = $user->createToken('auth_token')->plainTextToken;
-            return response()->json([
-                'status' => 'success',
-                'access_token' => $token,
-                'token_type' => 'Bearer',
-            ]);
-        } catch (Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    public function users(Request $request){
-
-        $user = User::all();
+  public function login(Request $request)
+{
+    if (!Auth::attempt($request->only('email', 'password'))) {
         return response()->json([
-            'users' => $user,
-        ]);
+            'status' => 'error',
+            'message' => 'Invalid login details'
+        ], 401);
     }
 
-    public function register(Request $request){
-         
-        try{
-            $validator = Validator::make($request->all(), [
-                'email' => 'unique:users',
-            ]);
-        
-            if ($validator->fails()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "User already exist!",
-                ]);
-            }
-            $fileName = "";
-            if(isset($request->profile_image) && $request->profile_image){
-                $file = base64_decode($request->profile_image);
-                $fileName = time() . '.png';
-                Storage::disk('public')->put('uploads/' . $fileName, $file);
-            }
-            $user = User::create([
-                'name' => $request->name,
-                'email' => $request->email,
-                'phone' => $request->phone,
-                'address' => $request->address,
-                'profile_image' => $fileName,
-                'password' => bcrypt($request->password),
-            ]);
- 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'User created successfully!',
-            ], 200);
-        }catch (Exception $e) {
+    try {
+        $user = User::where('email', $request['email'])->firstOrFail();
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'status' => 'success',
+            'access_token' => $token,
+            'token_type' => 'Bearer',
+            'name' => $user->name,
+            'mr_number' => $user->mr_number,
+            'profile_image' => $user->profile_image ? asset('storage/uploads/' . $user->profile_image) : null,
+        ]);
+    } catch (Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+
+   public function register(Request $request)
+{
+    try {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|unique:users',
+            'mr_number' => 'nullable|string|unique:users,mr_number',
+            'name' => 'required|string',
+            'phone' => 'required|string',
+            'address' => 'required|string',
+            'password' => 'required|string|min:6',
+            'profile_image' => 'nullable|string', 
+        ]);
+
+        if ($validator->fails()) {
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage(),
-            ], 500);
-        } 
+                'message' => $validator->errors()->first(),
+            ]);
+        }
+
+        $fileName = "";
+        if (isset($request->profile_image) && $request->profile_image) {
+            $file = base64_decode($request->profile_image);
+            $fileName = time() . '.png';
+            Storage::disk('public')->put('uploads/' . $fileName, $file);
+        }
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'phone' => $request->phone,
+            'address' => $request->address,
+            'profile_image' => $fileName,
+            'mr_number' => $request->mr_number ?? null, // nullable
+            'password' => bcrypt($request->password),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'User created successfully!',
+        ], 200);
+
+    } catch (Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
     }
+}
+
+
+
     public function test(Request $request){
         
 
@@ -491,12 +501,11 @@ public function createLabTestBooking(Request $request)
             ->whereIn('ServiceProfileID', $request->sids)
             ->sum('NormalFees');
 
-        // Create main booking with TotalPrice and Address
         $booking = LabTestBooking::create([
             'UserID' => $userId,
             'Status' => 'pending',
             'TotalPrice' => $totalPrice,
-            'Address' => $request->address, // <- save address
+            'Address' => $request->address, 
         ]);
 
         foreach ($request->sids as $sid) {
@@ -1145,6 +1154,103 @@ public function getActiveSliders()
     }
 }
 
+public function getProfile(Request $request)
+{
+    try {
+        $user = Auth::user(); 
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated',
+            ], 401);
+        }
+
+        if ($user->profile_image) {
+            $user->profile_image = Storage::disk('public')->url('uploads/' . $user->profile_image);
+        } else {
+            $user->profile_image = null;
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $user,
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+public function updateProfile(Request $request)
+{
+    try {
+        $user = Auth::user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated',
+            ], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|string|max:255',
+            'phone' => 'sometimes|string|max:20',
+            'address' => 'sometimes|string|max:255',
+            'profile_image' => 'sometimes|string', // base64 image
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $validator->errors(),
+            ], 400);
+        }
+
+        if ($request->has('name')) {
+            $user->name = $request->name;
+        }
+        if ($request->has('phone')) {
+            $user->phone = $request->phone;
+        }
+        if ($request->has('address')) {
+            $user->address = $request->address;
+        }
+
+        if ($request->has('profile_image') && $request->profile_image) {
+            // Delete old image
+            if ($user->profile_image && Storage::disk('public')->exists('uploads/' . $user->profile_image)) {
+                Storage::disk('public')->delete('uploads/' . $user->profile_image);
+            }
+
+            $file = base64_decode($request->profile_image);
+            $fileName = time() . '.png';
+            Storage::disk('public')->put('uploads/' . $fileName, $file);
+            $user->profile_image = $fileName;
+        }
+
+        $user->save();
+
+        // Return image URL
+        $user->profile_image = $user->profile_image
+            ? Storage::disk('public')->url('uploads/' . $user->profile_image)
+            : null;
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Profile updated successfully',
+            'user' => $user,
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
 
 
 
