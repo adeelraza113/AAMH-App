@@ -27,6 +27,48 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/app-sliders', [APIController::class, 'getActiveSliders']);
     Route::get('/user-profile', [APIController::class, 'getProfile']);
     Route::put('/user-profile', [APIController::class, 'updateProfile']);
+    Route::delete('/delete-user', [APIController::class, 'deleteUser']);
+    Route::get('/order-tracking', [APIController::class, 'getOrderTracking']);
+    Route::get('/lab-booking-tracking', [APIController::class, 'getLabBookingTracking']);
+    
+    Route::post('/blood-sugar', [APIController::class, 'addBloodSugarReading']);
+    Route::put('/blood-sugar', [APIController::class, 'updateBloodSugarReading']);
+    Route::get('/blood-sugar', [APIController::class, 'getAllBloodSugarReadings']);
+    Route::delete('/blood-sugar', [APIController::class, 'deleteBloodSugarById']);
+    
+    Route::post('/blood-pressure', [APIController::class, 'storeBloodPressure']);
+    Route::put('/blood-pressure', [APIController::class, 'updateBloodPressure']);
+    Route::get('/blood-pressure', [APIController::class, 'getBloodPressures']);
+    Route::delete('/blood-pressure', [APIController::class, 'deleteBloodPressure']); 
+
+    Route::post('/body-temperature', [APIController::class, 'addBodyTemperature']);
+    Route::put('/body-temperature', [APIController::class, 'updateBodyTemperature']);
+    Route::get('/body-temperature', [APIController::class, 'getBodyTemperatures']);
+    Route::delete('/body-temperature', [APIController::class, 'deleteBodyTemperature']);
+    
+    Route::post('/blood-oxygen', [APIController::class, 'addBloodOxygen']);
+    Route::put('/blood-oxygen', [APIController::class, 'updateBloodOxygen']);
+    Route::get('/blood-oxygen', [APIController::class, 'getBloodOxygen']);
+    Route::delete('/blood-oxygen', [APIController::class, 'deleteBloodOxygen']);
+    
+    Route::post('/hemoglobin', [APIController::class, 'storeHemoglobin']);
+    Route::put('/hemoglobin', [APIController::class, 'updateHemoglobin']);
+    Route::get('/hemoglobin', [APIController::class, 'getHemoglobin']);
+    Route::delete('/hemoglobin', [APIController::class, 'deleteHemoglobin']);
+
+    Route::post('/weight', [APIController::class, 'storeUserWeight']);
+    Route::put('/weight', [APIController::class, 'updateUserWeight']);
+    Route::get('/weight', [APIController::class, 'getUserWeights']);
+    Route::delete('/weight', [APIController::class, 'deleteUserWeight']);
+   
+   Route::get('/admin-appointments', [APIController::class, 'getAllAppointments']);
+   Route::get('/admin-labtests', [APIController::class, 'getAllLabTestBookings']);
+   Route::get('/admin-pharmacyorders', [APIController::class, 'getAllOrders']);
+
+  Route::get('/admin-payments', [APIController::class, 'getAllPayments']);
+  Route::post('/approveLabTest', [APIController::class, 'approveLabTest']);
+  Route::post('/approvePharmacyOrder', [APIController::class, 'approveOrder']);
+
 
 
 });
